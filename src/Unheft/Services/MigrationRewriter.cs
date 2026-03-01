@@ -43,10 +43,13 @@ public static class MigrationRewriter
             SyntaxFactory.SingletonSeparatedList(
                 SyntaxFactory.Attribute(SyntaxFactory.ParseName(attributes.MigrationAttribute))));
 
-        // Extract only whitespace trivia for indentation (exclude doc comments, etc.)
-        var indentTrivia = classDeclaration.GetLeadingTrivia()
-            .Where(t => t.IsKind(SyntaxKind.WhitespaceTrivia))
-            .ToSyntaxTriviaList();
+        // Extract only the immediate indentation trivia (last whitespace before the class keyword)
+        var allTrivia = classDeclaration.GetLeadingTrivia();
+        var lastWhitespace = allTrivia
+            .LastOrDefault(t => t.IsKind(SyntaxKind.WhitespaceTrivia));
+        var indentTrivia = lastWhitespace == default
+            ? SyntaxTriviaList.Empty
+            : SyntaxTriviaList.Create(lastWhitespace);
 
         // Strip existing doc comments from the class leading trivia
         var classLeadingTrivia = classDeclaration.GetLeadingTrivia();
