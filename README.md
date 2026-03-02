@@ -203,21 +203,20 @@ Open the repository in VS Code with the C# Dev Kit extension. Create a `.vscode/
 
 Adjust the `args` array to match the invocation you want to step through, then press **F5** to start debugging.
 
-### Pack and install from a local build
+### Install from a local build
 
-Build a local NuGet package and install it as a global tool:
-
-```bash
-dotnet pack src/Unheft -o /tmp/unheft-local
-dotnet tool install -g unheft --add-source /tmp/unheft-local
-```
-
-To update after rebuilding:
+Use the provided script to pack the project and install it as a global tool in one step:
 
 ```bash
-dotnet pack src/Unheft -o /tmp/unheft-local
-dotnet tool update -g unheft --add-source /tmp/unheft-local
+scripts/link-local
 ```
+
+This script:
+1. Packs `src/Unheft` into `artifacts/nupkg/`
+2. Uninstalls any existing global `unheft` installation
+3. Installs the freshly built package globally
+
+After running it, `unheft` in your shell resolves to the local build. Re-run the script whenever you want to pick up new changes.
 
 To uninstall:
 
