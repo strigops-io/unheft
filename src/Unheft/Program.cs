@@ -37,11 +37,29 @@ var verboseOption = new Option<bool>("--verbose")
     Description = "Show detailed output"
 };
 
+var projectOption = new Option<string?>("--project", "-p")
+{
+    Description = "Path to the target project (.csproj) containing the migrations"
+};
+
+var startupProjectOption = new Option<string?>("--startup-project", "-s")
+{
+    Description = "Path to the startup project (.csproj) used as the runtime host"
+};
+
+var contextOption = new Option<string?>("--context")
+{
+    Description = "The DbContext class name to use"
+};
+
 var rootCommand = new RootCommand("unheft — EF Core Migration Designer File Consolidation Tool");
 rootCommand.Add(pathArgument);
 rootCommand.Add(dryRunOption);
 rootCommand.Add(validateOption);
 rootCommand.Add(verboseOption);
+rootCommand.Add(projectOption);
+rootCommand.Add(startupProjectOption);
+rootCommand.Add(contextOption);
 
 rootCommand.SetAction(async (parseResult, cancellationToken) =>
 {
@@ -49,6 +67,9 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
     var dryRun = parseResult.GetValue(dryRunOption);
     var validate = parseResult.GetValue(validateOption);
     var verbose = parseResult.GetValue(verboseOption);
+    var project = parseResult.GetValue(projectOption);
+    var startupProject = parseResult.GetValue(startupProjectOption);
+    var context = parseResult.GetValue(contextOption);
 
     var directory = path.FullName;
 
@@ -61,7 +82,43 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
 
     if (validate)
     {
-        await RunWithValidation(directory, verbose);
+        // Auto-detect project if not provided
+        project ??= ProjectDetector.FindProjectFile(directory);
+
+        if (project is null)
+        {
+            Console.Error.WriteLine("Error: Could not detect the project file (.csproj). Use --project (-p) to specify it.");
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        // Auto-detect startup project if not provided and project is a class library
+        if (startupProject is null && ProjectDetector.IsClassLibrary(project))
+        {
+            var candidates = ProjectDetector.FindStartupProjects(project);
+            if (candidates.Count == 1)
+            {
+                startupProject = candidates[0];
+                Console.WriteLine($"Detected startup project: {startupProject}");
+            }
+            else if (candidates.Count > 1)
+            {
+                Console.Error.WriteLine("Error: Multiple startup project candidates found. Use --startup-project (-s) to specify one:");
+                foreach (var c in candidates)
+                    Console.Error.WriteLine($"  {c}");
+                Environment.ExitCode = 1;
+                return;
+            }
+            else
+            {
+                Console.Error.WriteLine("Error: The target project is a class library and no startup project was found.");
+                Console.Error.WriteLine("Use --startup-project (-s) to specify a runnable project.");
+                Environment.ExitCode = 1;
+                return;
+            }
+        }
+
+        await RunWithValidation(directory, verbose, project, startupProject, context);
     }
     else
     {
@@ -119,18 +176,39 @@ static void RunConsolidation(string directory, bool dryRun, bool verbose)
         : $"Consolidated {consolidated} migration(s), skipped {skipped}.");
 }
 
-static async Task RunWithValidation(string directory, bool verbose)
+static async Task RunWithValidation(string directory, bool verbose, string? project, string? startupProject, string? context)
 {
     Console.WriteLine($"Validating consolidation in: {directory}");
 
+    // Check for pending model changes
+    if (project is not null)
+    {
+        Console.WriteLine("Checking for pending model changes...");
+        var (hasPending, pendingError) = await Validator.CheckPendingModelChangesAsync(
+            project, startupProject, context);
+
+        if (hasPending)
+        {
+            Console.Error.WriteLine("Warning: There are pending model changes that have not been added as a migration.");
+            if (verbose && pendingError is not null)
+                Console.Error.WriteLine(pendingError);
+            Console.Error.WriteLine("Consider running 'dotnet ef migrations add' before validating.");
+        }
+    }
+
     // Step 1: Generate SQL before consolidation
     Console.WriteLine("Step 1/3: Generating migration SQL (before)...");
-    var (beforeValid, beforeSql, _, beforeError) = await Validator.ValidateAsync(directory);
+    var (beforeValid, beforeSql, _, beforeError) = await Validator.ValidateAsync(
+        project ?? directory, startupProject, context);
 
     if (!beforeValid)
     {
         Console.Error.WriteLine($"Error generating SQL before consolidation: {beforeError}");
         Console.Error.WriteLine("Note: --validate requires 'dotnet ef' tools to be installed and the project to be buildable.");
+        if (startupProject is null && project is not null && ProjectDetector.IsClassLibrary(project))
+        {
+            Console.Error.WriteLine("Hint: The target project appears to be a class library. Use --startup-project (-s) to specify a runnable project.");
+        }
         Environment.ExitCode = 1;
         return;
     }
@@ -144,7 +222,8 @@ static async Task RunWithValidation(string directory, bool verbose)
 
     // Step 3: Generate SQL after consolidation
     Console.WriteLine("Step 3/3: Generating migration SQL (after)...");
-    var (afterValid, afterSql, _, afterError) = await Validator.ValidateAsync(directory);
+    var (afterValid, afterSql, _, afterError) = await Validator.ValidateAsync(
+        project ?? directory, startupProject, context);
 
     if (!afterValid)
     {
