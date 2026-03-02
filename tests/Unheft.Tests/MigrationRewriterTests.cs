@@ -64,4 +64,41 @@ public class MigrationRewriterTests
 
         Assert.Empty(diagnostics);
     }
+
+    [Fact]
+    public void Consolidate_AddsDbContextNamespaceUsing()
+    {
+        var attributes = DesignerParser.ExtractAttributes(TestFixtures.DesignerFile)!;
+
+        var result = MigrationRewriter.Consolidate(TestFixtures.MainMigrationFile, attributes);
+
+        Assert.Contains("using UnheftDemo.Data;", result);
+    }
+
+    [Fact]
+    public void Consolidate_TransfersDesignerUsingDirectives()
+    {
+        var attributes = DesignerParser.ExtractAttributes(TestFixtures.DesignerFile)!;
+
+        var result = MigrationRewriter.Consolidate(TestFixtures.MainMigrationFile, attributes);
+
+        // All using directives from the Designer file should be present
+        Assert.Contains("using Microsoft.EntityFrameworkCore;", result);
+        Assert.Contains("using Microsoft.EntityFrameworkCore.Infrastructure;", result);
+        Assert.Contains("using Microsoft.EntityFrameworkCore.Migrations;", result);
+        Assert.Contains("using UnheftDemo.Data;", result);
+    }
+
+    [Fact]
+    public void Consolidate_DoesNotDuplicateExistingUsings()
+    {
+        var attributes = DesignerParser.ExtractAttributes(TestFixtures.DesignerFile)!;
+
+        var result = MigrationRewriter.Consolidate(TestFixtures.MainMigrationFile, attributes);
+
+        // Microsoft.EntityFrameworkCore.Migrations is already in the main file;
+        // it should appear exactly once
+        var count = result.Split("using Microsoft.EntityFrameworkCore.Migrations;").Length - 1;
+        Assert.Equal(1, count);
+    }
 }

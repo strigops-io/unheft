@@ -29,6 +29,12 @@ public static class MigrationRewriter
         root = EnsureUsing(root, "Microsoft.EntityFrameworkCore");
         root = EnsureUsing(root, "Microsoft.EntityFrameworkCore.Infrastructure");
 
+        // Add using directives from the Designer file
+        foreach (var ns in attributes.UsingDirectives)
+        {
+            root = EnsureUsing(root, ns);
+        }
+
         // Re-find class after potential tree modification
         classDeclaration = root.DescendantNodes()
             .OfType<ClassDeclarationSyntax>()
