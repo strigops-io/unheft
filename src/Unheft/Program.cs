@@ -1,6 +1,21 @@
 using System.CommandLine;
 using Unheft.Services;
 
+// When no arguments are provided, launch the interactive wizard
+if (args.Length == 0 && !Console.IsInputRedirected)
+{
+    var result = await Wizard.RunAsync(Console.In, Console.Out, Console.Error);
+    if (result == -1)
+    {
+        // User chose help — fall through to System.CommandLine with --help
+        args = ["--help"];
+    }
+    else
+    {
+        return result;
+    }
+}
+
 var pathArgument = new Argument<DirectoryInfo>("path")
 {
     Description = "Path to the directory containing EF Core migrations",
