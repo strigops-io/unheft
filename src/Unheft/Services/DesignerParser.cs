@@ -48,7 +48,12 @@ public static class DesignerParser
         if (dbContextAttr is null || migrationAttr is null)
             return null;
 
-        return new DesignerAttributes(dbContextAttr, migrationAttr);
+        var usingDirectives = root.Usings
+            .Select(u => u.Name?.ToString().TrimStart())
+            .Where(n => n is not null)
+            .ToList()!;
+
+        return new DesignerAttributes(dbContextAttr, migrationAttr, usingDirectives!);
     }
 
     /// <summary>

@@ -47,4 +47,15 @@ public class DesignerParserTests
 
         Assert.Null(result);
     }
+
+    [Fact]
+    public void ExtractAttributes_IncludesUsingDirectives()
+    {
+        var result = DesignerParser.ExtractAttributes(TestFixtures.DesignerFile);
+
+        Assert.NotNull(result);
+        Assert.Contains("UnheftDemo.Data", result.UsingDirectives);
+        Assert.Contains("Microsoft.EntityFrameworkCore", result.UsingDirectives);
+        Assert.Contains("Microsoft.EntityFrameworkCore.Infrastructure", result.UsingDirectives);
+    }
 }
