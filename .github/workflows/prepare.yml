@@ -1,0 +1,57 @@
+name: Prepare Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-pack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Determine version
+        id: version
+        run: |
+          # Read base version from csproj
+          BASE_VERSION=$(grep -oPm1 '(?<=<Version>)[^<]+' src/Unheft/Unheft.csproj)
+          MAJOR_MINOR=$(echo "$BASE_VERSION" | grep -oP '^\d+\.\d+')
+          # Patch = number of commits on the current branch
+          PATCH=$(git rev-list --count HEAD)
+          VERSION="${MAJOR_MINOR}.${PATCH}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test --no-build --configuration Release
+
+      - name: Pack
+        run: dotnet pack src/Unheft --no-build --configuration Release -o artifacts/nupkg /p:Version=${{ steps.version.outputs.version }}
+
+      - name: Upload NuGet package artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts/nupkg/*.nupkg
+          retention-days: 90

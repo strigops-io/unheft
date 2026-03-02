@@ -1,4 +1,4 @@
-# unheft
+# Strigops Unheft
 
 **EF Core Migration Designer File Consolidation Tool**
 
