@@ -1,0 +1,45 @@
+name: Release to NuGet
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Prepare Release workflow run ID (leave blank to use latest successful run)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: nuget
+
+    steps:
+      - name: Resolve run ID
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${{ inputs.run_id }}" ]; then
+            echo "run_id=${{ inputs.run_id }}" >> "$GITHUB_OUTPUT"
+          else
+            RUN_ID=$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/prepare.yml/runs?branch=main&status=success&per_page=1" \
+              --jq '.workflow_runs[0].id')
+            echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "Using latest successful run: $RUN_ID"
+          fi
+
+      - name: Download NuGet package artifact
+        uses: actions/download-artifact@v4.1.9
+        with:
+          name: nuget-package
+          path: artifacts/nupkg
+          run-id: ${{ steps.resolve.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Push to NuGet.org
+        run: dotnet nuget push artifacts/nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
