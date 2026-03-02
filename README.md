@@ -205,13 +205,21 @@ Adjust the `args` array to match the invocation you want to step through, then p
 
 ### Install from a local build
 
-Use the provided script to pack the project and install it as a global tool in one step:
+Use the provided script to pack the project and install it as a global tool in one step.
+
+**macOS / Linux:**
 
 ```bash
-scripts/link-local
+scripts/link-local.sh
 ```
 
-This script:
+**Windows (PowerShell):**
+
+```powershell
+scripts\link-local.ps1
+```
+
+Each script:
 1. Packs `src/Unheft` into `artifacts/nupkg/`
 2. Uninstalls any existing global `unheft` installation
 3. Installs the freshly built package globally

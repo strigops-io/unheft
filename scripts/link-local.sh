@@ -2,7 +2,7 @@
 # link-local — build, pack, and install unheft from the local source tree
 # so you can run and test the tool as if it were installed from NuGet.
 #
-# Usage: scripts/link-local
+# Usage: scripts/link-local.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
