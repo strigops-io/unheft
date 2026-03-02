@@ -148,3 +148,86 @@ Migrations/
 - **Non-destructive**: Designer files are archived (renamed), not deleted
 - **Validation**: Use `--validate` to prove the SQL output is unchanged
 - **Dry run**: Preview all changes before committing with `--dry-run`
+
+## Development
+
+### Prerequisites
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+
+### Build
+
+```bash
+dotnet build
+```
+
+### Run tests
+
+```bash
+dotnet test
+```
+
+### Run the tool locally (without installing globally)
+
+Use `dotnet run` and pass arguments after `--`:
+
+```bash
+# Interactive wizard
+dotnet run --project src/Unheft
+
+# Point at a migrations directory
+dotnet run --project src/Unheft -- path/to/Migrations
+
+# Dry run
+dotnet run --project src/Unheft -- path/to/Migrations --dry-run --verbose
+```
+
+### Debug in VS Code
+
+Open the repository in VS Code with the C# Dev Kit extension. Create a `.vscode/launch.json` with the following configuration to run and debug the tool:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run unheft",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/Unheft/Unheft.csproj",
+      "args": ["path/to/Migrations", "--dry-run", "--verbose"]
+    }
+  ]
+}
+```
+
+Adjust the `args` array to match the invocation you want to step through, then press **F5** to start debugging.
+
+### Install from a local build
+
+Use the provided script to pack the project and install it as a global tool in one step.
+
+**macOS / Linux:**
+
+```bash
+scripts/link-local.sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+scripts\link-local.ps1
+```
+
+Each script:
+1. Packs `src/Unheft` into `artifacts/nupkg/`
+2. Uninstalls any existing global `unheft` installation
+3. Installs the freshly built package globally
+
+After running it, `unheft` in your shell resolves to the local build. Re-run the script whenever you want to pick up new changes.
+
+To uninstall:
+
+```bash
+dotnet tool uninstall -g unheft
+```
