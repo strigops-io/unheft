@@ -49,11 +49,12 @@ public static class DesignerParser
             return null;
 
         var usingDirectives = root.Usings
-            .Select(u => u.Name?.ToString().TrimStart())
+            .Select(u => u.Name?.ToString().Trim())
             .Where(n => n is not null)
-            .ToList()!;
+            .Cast<string>()
+            .ToList();
 
-        return new DesignerAttributes(dbContextAttr, migrationAttr, usingDirectives!);
+        return new DesignerAttributes(dbContextAttr, migrationAttr, usingDirectives);
     }
 
     /// <summary>
