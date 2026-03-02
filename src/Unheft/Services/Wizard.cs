@@ -48,12 +48,26 @@ public static class Wizard
     {
         output.WriteLine();
 
-        // Step 1: Find migration directories
+        // Step 1: Find migration directory
         var directory = await FindMigrationDirectory(input, output, error);
         if (directory is null)
             return 1;
 
-        // Step 2: Ask about options
+        // Step 2: Detect project, startup project, and DbContext
+        var project = DetectOrPromptForProject(directory, input, output, error);
+        string? startupProject = null;
+        string? context = null;
+
+        if (project is not null)
+        {
+            // Check if class library and resolve startup project
+            startupProject = DetectOrPromptForStartupProject(project, input, output, error);
+
+            // Detect or prompt for DbContext
+            context = DetectOrPromptForDbContext(directory, input, output);
+        }
+
+        // Step 3: Ask about options
         output.WriteLine();
         output.Write("Run in dry-run mode? (preview changes without modifying files) [y/N]: ");
         var dryRun = IsYes(input.ReadLine());
@@ -68,13 +82,19 @@ public static class Wizard
             validate = IsYes(input.ReadLine());
         }
 
-        // Step 3: Confirm and run
+        // Step 4: Confirm and run
         output.WriteLine();
         output.WriteLine("Ready to consolidate with the following settings:");
-        output.WriteLine($"  Directory:  {directory}");
-        output.WriteLine($"  Dry run:    {(dryRun ? "Yes" : "No")}");
-        output.WriteLine($"  Verbose:    {(verbose ? "Yes" : "No")}");
-        output.WriteLine($"  Validate:   {(validate ? "Yes" : "No")}");
+        output.WriteLine($"  Directory:        {directory}");
+        if (project is not null)
+            output.WriteLine($"  Project:          {project}");
+        if (startupProject is not null)
+            output.WriteLine($"  Startup project:  {startupProject}");
+        if (context is not null)
+            output.WriteLine($"  DbContext:        {context}");
+        output.WriteLine($"  Dry run:          {(dryRun ? "Yes" : "No")}");
+        output.WriteLine($"  Verbose:          {(verbose ? "Yes" : "No")}");
+        output.WriteLine($"  Validate:         {(validate ? "Yes" : "No")}");
         output.WriteLine();
         output.Write("Proceed? [Y/n]: ");
 
@@ -89,11 +109,153 @@ public static class Wizard
         // Execute
         if (validate)
         {
-            return await RunWithValidation(directory, verbose, output, error);
+            return await RunWithValidation(directory, verbose, project, startupProject, context, output, error);
         }
 
         RunConsolidation(directory, dryRun, verbose, output);
         return 0;
+    }
+
+    /// <summary>
+    /// Detects the project file (.csproj) from the migration directory, or prompts the user.
+    /// </summary>
+    internal static string? DetectOrPromptForProject(string migrationDirectory, TextReader input, TextWriter output, TextWriter error)
+    {
+        var project = ProjectDetector.FindProjectFile(migrationDirectory);
+
+        if (project is not null)
+        {
+            output.WriteLine($"Detected project: {project}");
+            output.Write("Use this project? [Y/n]: ");
+            if (!IsNo(input.ReadLine()))
+                return project;
+        }
+        else
+        {
+            output.WriteLine("Could not automatically detect the project file (.csproj).");
+        }
+
+        output.Write("Enter the path to the project file (.csproj), or press Enter to skip: ");
+        var manual = input.ReadLine()?.Trim();
+
+        if (string.IsNullOrEmpty(manual))
+            return null;
+
+        var fullPath = Path.GetFullPath(manual);
+        if (!File.Exists(fullPath))
+        {
+            error.WriteLine($"File not found: {fullPath}");
+            return null;
+        }
+
+        return fullPath;
+    }
+
+    /// <summary>
+    /// Detects a startup project if the target project is a class library, or prompts the user.
+    /// </summary>
+    internal static string? DetectOrPromptForStartupProject(string projectPath, TextReader input, TextWriter output, TextWriter error)
+    {
+        if (!ProjectDetector.IsClassLibrary(projectPath))
+            return null;
+
+        output.WriteLine();
+        output.WriteLine("The target project is a class library and cannot be run directly.");
+        output.WriteLine("A startup project is required for validation.");
+
+        var candidates = ProjectDetector.FindStartupProjects(projectPath);
+
+        if (candidates.Count == 1)
+        {
+            output.WriteLine($"Found startup project: {candidates[0]}");
+            output.Write("Use this startup project? [Y/n]: ");
+            if (!IsNo(input.ReadLine()))
+                return candidates[0];
+        }
+        else if (candidates.Count > 1)
+        {
+            output.WriteLine("Found multiple projects that reference this one:");
+            output.WriteLine();
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                output.WriteLine($"  [{i + 1}] {candidates[i]}");
+            }
+            output.WriteLine($"  [{candidates.Count + 1}] Enter a different path");
+            output.WriteLine();
+            output.Write("Choose a startup project: ");
+
+            var selection = input.ReadLine()?.Trim();
+            if (int.TryParse(selection, out var idx) && idx >= 1 && idx <= candidates.Count)
+                return candidates[idx - 1];
+
+            if (idx != candidates.Count + 1)
+            {
+                error.WriteLine("Invalid selection.");
+                return null;
+            }
+        }
+
+        output.Write("Enter the path to the startup project (.csproj): ");
+        var manual = input.ReadLine()?.Trim();
+
+        if (string.IsNullOrEmpty(manual))
+        {
+            error.WriteLine("No startup project provided.");
+            return null;
+        }
+
+        var fullPath = Path.GetFullPath(manual);
+        if (!File.Exists(fullPath))
+        {
+            error.WriteLine($"File not found: {fullPath}");
+            return null;
+        }
+
+        return fullPath;
+    }
+
+    /// <summary>
+    /// Detects the DbContext name from Designer files in the migration directory, or prompts the user.
+    /// </summary>
+    internal static string? DetectOrPromptForDbContext(string migrationDirectory, TextReader input, TextWriter output)
+    {
+        var contextNames = ProjectDetector.DetectDbContextNames(migrationDirectory);
+
+        if (contextNames.Count == 1)
+        {
+            output.WriteLine($"Detected DbContext: {contextNames[0]}");
+            output.Write("Use this DbContext? [Y/n]: ");
+            if (!IsNo(input.ReadLine()))
+                return contextNames[0];
+        }
+        else if (contextNames.Count > 1)
+        {
+            output.WriteLine("Found multiple DbContext classes:");
+            output.WriteLine();
+            for (int i = 0; i < contextNames.Count; i++)
+            {
+                output.WriteLine($"  [{i + 1}] {contextNames[i]}");
+            }
+            output.WriteLine($"  [{contextNames.Count + 1}] Enter a different name");
+            output.WriteLine();
+            output.Write("Choose a DbContext: ");
+
+            var selection = input.ReadLine()?.Trim();
+            if (int.TryParse(selection, out var idx) && idx >= 1 && idx <= contextNames.Count)
+                return contextNames[idx - 1];
+
+            if (idx != contextNames.Count + 1)
+                return null;
+        }
+        else
+        {
+            output.WriteLine("Could not automatically detect the DbContext class.");
+        }
+
+        output.Write("Enter the DbContext class name (or press Enter to skip): ");
+        var manual = input.ReadLine()?.Trim();
+
+        return string.IsNullOrEmpty(manual) ? null : manual;
     }
 
     /// <summary>
@@ -305,17 +467,41 @@ public static class Wizard
             : $"Consolidated {consolidated} migration(s), skipped {skipped}.");
     }
 
-    private static async Task<int> RunWithValidation(string directory, bool verbose, TextWriter output, TextWriter error)
+    private static async Task<int> RunWithValidation(string directory, bool verbose, string? project,
+        string? startupProject, string? context, TextWriter output, TextWriter error)
     {
         output.WriteLine($"Validating consolidation in: {directory}");
 
+        var projectPath = project ?? directory;
+
+        // Check for pending model changes
+        if (project is not null)
+        {
+            output.WriteLine("Checking for pending model changes...");
+            var (hasPending, pendingError) = await Validator.CheckPendingModelChangesAsync(
+                project, startupProject, context);
+
+            if (hasPending)
+            {
+                error.WriteLine("Warning: There are pending model changes that have not been added as a migration.");
+                if (verbose && pendingError is not null)
+                    error.WriteLine(pendingError);
+                error.WriteLine("Consider running 'dotnet ef migrations add' before validating.");
+            }
+        }
+
         output.WriteLine("Step 1/3: Generating migration SQL (before)...");
-        var (beforeValid, beforeSql, _, beforeError) = await Validator.ValidateAsync(directory);
+        var (beforeValid, beforeSql, _, beforeError) = await Validator.ValidateAsync(
+            projectPath, startupProject, context);
 
         if (!beforeValid)
         {
             error.WriteLine($"Error generating SQL before consolidation: {beforeError}");
             error.WriteLine("Note: --validate requires 'dotnet ef' tools to be installed and the project to be buildable.");
+            if (startupProject is null && project is not null && ProjectDetector.IsClassLibrary(project))
+            {
+                error.WriteLine("Hint: The target project appears to be a class library. Use --startup-project (-s) to specify a runnable project.");
+            }
             return 1;
         }
 
@@ -326,7 +512,8 @@ public static class Wizard
         output.WriteLine($"  Consolidated {consolidated} migration(s).");
 
         output.WriteLine("Step 3/3: Generating migration SQL (after)...");
-        var (afterValid, afterSql, _, afterError) = await Validator.ValidateAsync(directory);
+        var (afterValid, afterSql, _, afterError) = await Validator.ValidateAsync(
+            projectPath, startupProject, context);
 
         if (!afterValid)
         {
